@@ -235,27 +235,6 @@ def calc_gradient_penalty(critic, real_data, fake_data):
     gradient_penalty=((gradients.norm(2, dim=1)-1) ** 2)
     return gradient_penalty
 
-
-# def critic_loss_GP(critic, real_data, fake_data, penalty_coefficient):
-#     """
-#     Wasserstein distance to minimize as loss for the critic, regularized by
-#     Lipschwitz 1 gradient penalty
-#     -(E[D(x_real)] - E[D(x_fake)]) + lambda*E[(||D(x_imputed)'||_2 -1)**2]
-#     """
-#     # Original critic loss
-#     # D(x_real)
-#     output_real = critic.forward(real_data)
-#     # D(x_fake)
-#     output_fake = critic.forward(fake_data)
-#     raw_loss = (output_fake - output_real).squeeze()
-
-#     # Gradient penalty for Lipschwitz-1
-#     gradient_penalty = calc_gradient_penalty(critic, real_data,fake_data)
-
-#     # Total loss
-#     loss = (raw_loss + penalty_coefficient * gradient_penalty).mean()
-#     return loss
-
 def critic_loss(output_real, output_fake):
     """
     Wasserstein distance to minimize as loss for the critic
@@ -269,54 +248,6 @@ def generator_loss(output_fake):
     -E[D(G(noise))]
     """
     return -torch.mean(output_fake)
-
-
-# def train_critic(optimizer, real_data, fake_data, gradient_penalty_coefficient=10):
-#     N = real_data.size(0) # Get number of rows from torch tensor
-#     optimizer.zero_grad() # reset gradient
-#
-#     # Note: Calling backward() multiple times will acumulate the gradients
-#     # until they are reset with zero_grad()
-#     # E[D(x_real)]
-#     output_real = critic.forward(real_data)
-#
-#     # E[D(x_fake)]
-#     output_fake = critic.forward(fake_data)
-#     raw_loss = critic_loss(output_real, output_fake)
-#
-#     # Gradient penalty
-#     gradient_penalty = calc_gradient_penalty(critic, real_data,fake_data)
-#
-#     # Calculate overall loss
-#     # Minimize the raw loss pushed upwards by penalty (always positive)
-#     loss = raw_loss + gradient_penalty_coefficient*gradient_penalty
-#     loss = loss.mean() # Average over batch
-#
-#     # Weight update
-#     loss.backward()
-#     optimizer.step()
-#
-#     # Return error and predictions for monitoring
-#     return raw_loss.mean(), output_real, output_fake
-#
-#
-# def train_generator(optimizer, fake_data):
-#     N = fake_data.size(0) # Get number of rows from torch tensor
-#     optimizer.zero_grad() # reset gradient
-#
-#     # Get discriminator prediction output
-#     critic_prediction = critic.forward(fake_data)
-#
-#     # See explanation above. Intuitively, we create loss if the
-#     # discriminator predicts our pseudo-ones as zeros.
-#     loss_generator = generator_loss(critic_prediction)
-#     loss_generator.backward()
-#
-#     # Weight update
-#     optimizer.step()
-#
-#     # Return error and predictions for monitoring
-#     return loss_generator
 
 class WGAN():
     """
