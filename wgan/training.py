@@ -6,19 +6,21 @@ from torch.autograd import Variable
 from torch.autograd import grad as torch_grad
 
 
-class Trainer():
-    def __init__(self, generator, discriminator, gen_optimizer, dis_optimizer,
-                 gp_weight=10, critic_iterations=5, print_every=50,
+class WGAN():
+    def __init__(self, generator, critic, G_optimizer, C_optimizer,
+                 gp_weight=10, critic_iterations=5, verbose=0, print_every=100,
                  use_cuda=False):
+        #TODO: Standardize names to generator/critic
         self.G = generator
-        self.G_opt = gen_optimizer
-        self.D = discriminator
-        self.D_opt = dis_optimizer
-        self.losses = {'G': [], 'D': [], 'GP': [], 'gradient_norm': []}
+        self.G_opt = G_optimizer
+        self.D = critic
+        self.D_opt = C_optimizer
+        self.losses = {'G': [], 'D': [], 'GP': [], "distance":[], 'gradient_norm': []}
         self.num_steps = 0
         self.use_cuda = use_cuda
         self.gp_weight = gp_weight
         self.critic_iterations = critic_iterations
+        self.verbose = verbose
         self.print_every = print_every
 
         if self.use_cuda:
@@ -33,31 +35,37 @@ class Trainer():
         aux_data = Variable(aux_data)
 
         # Calculate probabilities on real and generated data
-
         if self.use_cuda:
             data = data.cuda()
             aux_data = aux_data.cuda()
 
-        generated_data = self.sample_generator(batch_size, aux_data)
+        # Generate fake data
+        generated_data = self.sample_generator(batch_size, aux_data).detach()
 
+        self.D_opt.zero_grad()
+        # Calculate critic output of real and fake data
         d_real = self.D(data,aux_data)
         d_generated = self.D(generated_data, aux_data)
 
         # Get gradient penalty
-        gradient_penalty = self._gradient_penalty(data, generated_data, aux_data)
-        self.losses['GP'].append(gradient_penalty.data)
+        gradient_penalty = self.gp_weight*self._gradient_penalty(data, generated_data, aux_data)
 
         # Create total loss and optimize
-        self.D_opt.zero_grad()
+        d_distance = d_real.mean() - d_generated.mean()
+        # The Wasserstein distance is the supremum (maximum) between the two expectations
+        # in order to maximize, we minimize the negative loss and
+        # add the penalty
+        d_loss = -d_distance + gradient_penalty
 
-        d_distance = d_generated.mean() - d_real.mean()
-        d_loss = d_distance + gradient_penalty
         d_loss.backward()
-
         self.D_opt.step()
 
         # Record loss
-        self.losses['D'].append(d_distance.data)
+        if self.verbose > 1:
+            if i % self.print_every == 0:
+                self.losses['GP'].append(gradient_penalty.data)
+                self.losses['D'].append(-d_distance.data)
+                self.losses["distance"].append(d_distance.data)
 
     def _generator_train_iteration(self, data, aux_data):
         """ """
@@ -69,56 +77,61 @@ class Trainer():
 
         # Calculate loss and optimize
         d_generated = self.D(generated_data, aux_data)
-        g_loss = - d_generated.mean()
+        g_loss = -d_generated.mean()
         g_loss.backward()
         self.G_opt.step()
 
         # Record loss
         self.G.training_iterations += 1
-        self.losses['G'].append(g_loss.data)
+
+        if self.verbose > 1:
+            if i % self.print_every == 0:
+                self.losses['G'].append(g_loss.data)
 
     def _gradient_penalty(self, real_data, generated_data, aux_data):
-        batch_size = real_data.size()[0]
+        assert real_data.size() == generated_data.size(), f'real and generated mini batches must have same size ({real_data.size()} and {generated_data.size()})'
+        batch_size = real_data.size(0)
 
         # Calculate interpolation
-        alpha = torch.rand(batch_size, 1)
+        alpha = torch.rand(batch_size, *[1 for _ in range(real_data.dim()-1)])
         #alpha = alpha.expand_as(real_data)
         if self.use_cuda:
             alpha = alpha.cuda()
-        interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
+
+        interpolated = alpha * real_data.data + (1. - alpha) * generated_data.data
         interpolated = Variable(interpolated, requires_grad=True)
         if self.use_cuda:
             interpolated = interpolated.cuda()
 
         # Calculate distance of interpolated examples
-        prob_interpolated = self.D(interpolated, aux_x=aux_data)
+        d_interpolated = self.D(interpolated, aux_x=aux_data)
 
         # Calculate gradients of probabilities with respect to examples
-        gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
-                               grad_outputs=torch.ones(prob_interpolated.size()).cuda() if self.use_cuda else torch.ones(
-                               prob_interpolated.size()),
-                               create_graph=True, retain_graph=True)[0]
-
-        # Gradients have shape (batch_size, num_channels, img_width, img_height),
-        # so flatten to easily take norm per example in batch
-        #gradients = gradients.view(batch_size, -1)
-        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data)
+        gradients = torch_grad(outputs=d_interpolated, inputs=interpolated,
+                               grad_outputs=torch.ones(d_interpolated.size()).cuda()
+                               if self.use_cuda else torch.ones(
+                                      d_interpolated.size()),
+                                      create_graph=True#, retain_graph=True
+                               )[0]
 
         # Derivatives of the gradient close to 0 can cause problems because of
         # the square root, so manually calculate norm and add epsilon
         gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
 
         # Return gradient penalty
-        return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
+        if self.verbose > 0:
+            if i % self.print_every == 0:
+                self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data)
+        return ((gradients_norm - 1) ** 2).mean()
 
     def _train_epoch(self, data_loader):
         for i, data in enumerate(data_loader):
-            if self.G.training_iterations < 25:
-                self.critic_iterations = 100
-            elif self.G.training_iterations % 50 < 5:
-                self.critic_iterations = 20
+            if self.G.training_iterations < 10:
+                critic_iterations = self.critic_iterations * 10
+            elif self.G.training_iterations < 100:
+                critic_iterations = self.critic_iterations * 2
             else:
-                self.critic_iterations = 5
+                critic_iterations = self.critic_iterations
 
             self.num_steps += 1
             if len(data[1].shape) == 1:
@@ -126,18 +139,20 @@ class Trainer():
 
             self._critic_train_iteration(data[0], data[1])
             # Only update generator every |critic_iterations| iterations
-            if self.num_steps % self.critic_iterations == 0:
+            if self.num_steps % critic_iterations == 0:
                 self._generator_train_iteration(data[0], data[1])
 
-            if i % self.print_every == 0:
-                print("Iteration {}".format(i + 1))
-                print("D: {}".format(self.losses['D'][-1]))
-                print("GP: {}".format(self.losses['GP'][-1]))
-                print("Gradient norm: {}".format(self.losses['gradient_norm'][-1]))
-                if self.num_steps > self.critic_iterations:
-                    print("G: {}".format(self.losses['G'][-1]))
+            if self.verbose > 1:
+                if i % self.print_every == 0:
+                    print("Iteration {}".format(i + 1))
+                    print("D: {}".format(self.losses['D'][-1]))
+                    print("GP: {}".format(self.losses['GP'][-1]))
+                    print("Gradient norm: {}".format(self.losses['gradient_norm'][-1]))
+                    if self.num_steps > critic_iterations:
+                        print("G: {}".format(self.losses['G'][-1]))
+                        print("Distance: {}".format(self.losses['distance'][-1]))
 
-    def train(self, data_loader, epochs, save_training_gif=True):
+    def train(self, data_loader, epochs, save_training_gif=False):
         if save_training_gif:
             # Fix latents to see how image generation improves during training
             fixed_latents = Variable(self.G.sample_latent(64))
