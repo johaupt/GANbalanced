@@ -9,7 +9,7 @@ from wgan.training import WGAN
 
 
 def make_GANbalancer(dataset, generator_input, generator_layers, critic_layers,
-emb_sizes, no_aux,learning_rate):
+emb_sizes, no_aux,learning_rate,critic_iterations=5):
     """
     Make a generator and critic to fit the given dataset
 
@@ -43,7 +43,7 @@ emb_sizes, no_aux,learning_rate):
 
     trainer = WGAN(generator=generator, critic=critic,
                 G_optimizer=G_optimizer, C_optimizer=C_optimizer,
-                gp_weight=10, critic_iterations=5,
+                gp_weight=10, critic_iterations=critic_iterations,
                 verbose=0, print_every=1,
                 use_cuda=torch.cuda.is_available())
 

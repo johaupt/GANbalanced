@@ -127,9 +127,7 @@ class WGAN():
     def _train_epoch(self, data_loader):
         for i, data in enumerate(data_loader):
             if self.G.training_iterations < 10:
-                critic_iterations = self.critic_iterations * 10
-            elif self.G.training_iterations < 100:
-                critic_iterations = self.critic_iterations * 2
+                critic_iterations = self.critic_iterations * 5
             else:
                 critic_iterations = self.critic_iterations
 

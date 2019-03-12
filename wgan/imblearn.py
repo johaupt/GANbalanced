@@ -37,14 +37,37 @@ class GANbalancer(BaseOverSampler):
     {random_state}
 
      generator_input: int
+       The number of random input noise variables (z) to input to the generator
+
      generator_layers,critic_layers: list of int
+       List of nodes in each hidden layer. Can be an empty list to create no
+       hidden layer, i.e. a linear model.
 
      idx_cont:  list of integers
+       Column indices of continuous variables.
 
      categorical: list of tuples (idx_cat, cat_levels, emb_sizes) or None
+       List of tuples, one tuple for each categorical variable. Each tuple
+       includes the column index of the variable, the number of unique levels within
+       the variable (e.g. A, B, A, C -> 3 levels) and the dimensionality of the
+       embedding for this variable (e.g. 10 -> 10 latent dimensions).
 
      auxiliary: True, False
+       If False, then any auxiliary variables provided by the dataset are ignored
+       and an unconditional Wasserstein GAN is trained.
 
+     batch_size: int
+       Batch size for stochastic gradient descent training
+
+     n_iter: int
+       Number of training iterations of the generator. The WGAN will be trained
+       for as many epochs as are needed to reach the number of training iterations.
+       The number of epochs needed depends on the number of observations, batch
+       size and critic iterations. When comparing to other research use:
+         train_iter = epoch * (no_obs / batch_size*critic_iter)
+
+    critic_iterations: int
+       Train critic for n batches before generator is trained on 1 batch.
 
      learning_rate: 2D tuple of floats
        Learning rate for the (generator, critic)
@@ -77,6 +100,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
     def __init__(self, idx_cont, categorical, auxiliary=True,
                  generator_input=10, generator_layers=[10], critic_layers=[10],
                  batch_size=64, n_iter=1000, learning_rate=(5e-5,5e-5),
+                 critic_iterations=5,
                  sampling_strategy='auto',
                  random_state=None, verbose=0):
         super().__init__(
@@ -96,6 +120,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         self.critic_layers = critic_layers
 
         self.learning_rate = learning_rate
+        self.critic_iterations= critic_iterations
 
         self.batch_size = batch_size
         self.n_iter = n_iter
@@ -128,7 +153,8 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         generator, critic, trainer = make_GANbalancer(
         dataset=dataset, generator_input=self.generator_input,
         generator_layers=self.generator_layers, critic_layers=self.critic_layers,
-        emb_sizes=self.emb_sizes, no_aux=self.no_aux, learning_rate = self.learning_rate)
+        emb_sizes=self.emb_sizes, no_aux=self.no_aux, learning_rate = self.learning_rate,
+        critic_iterations = self.critic_iterations)
 
         train_loader = DataLoader(dataset, batch_size = self.batch_size, shuffle=True)
 
