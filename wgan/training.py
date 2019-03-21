@@ -111,7 +111,8 @@ class WGAN():
                                grad_outputs=torch.ones(d_interpolated.size()).cuda()
                                if self.use_cuda else torch.ones(
                                       d_interpolated.size()),
-                                      create_graph=True#, retain_graph=True
+                                      create_graph=True, retain_graph=True,
+                                      only_inputs=True
                                )[0]
 
         # Derivatives of the gradient close to 0 can cause problems because of

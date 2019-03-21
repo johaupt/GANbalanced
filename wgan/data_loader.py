@@ -2,7 +2,7 @@ import numpy as np
 from torch.utils.data import DataLoader, Dataset
 
 class TabularDataset(Dataset):
-    def __init__(self, X, X_cat=None, y=None, cat_levels=None):
+    def __init__(self, X, X_cat=None, y=None, cat_levels=None, group_filter=None):
         """
         Characterizes a Dataset for PyTorch WGAN including categorical
         and/or auxiliary variables
@@ -28,7 +28,6 @@ class TabularDataset(Dataset):
           the number of levels is guessed from the number of unique values in
           each categorical column.
         """
-        self.n = X.shape[0]
         self.no_cat = 0
         self.no_cont = X.shape[1]
 
@@ -39,7 +38,10 @@ class TabularDataset(Dataset):
              y = y.reshape(-1,1)
              y_cols = 1
             y_levels = [len(np.unique(y[:,i])) for i in range(y_cols)]
-            self.y = np.hstack([np.eye(y_levels[i])[y[:,i].astype(np.int32)].astype(np.float32) for i in range(y.shape[1])])
+
+            # One hot encode y's
+            self.y = np.hstack([np.eye(y_levels[i])[y[:,i].astype(np.int32)].astype(np.float32)
+                                for i in range(y.shape[1])])
             self.no_aux = self.y.shape[1]
         else:
             self.y = np.zeros((self.n, 1)).astype(np.float32)
@@ -47,13 +49,24 @@ class TabularDataset(Dataset):
 
         if X_cat is not None:
             if cat_levels == 0:
-                cat_levels = [len(np.max(X_cat[:,i])) for i in range(X_cat.shape[1])]
+                cat_levels = [len(np.nunique(X_cat[:,i])) for i in range(X_cat.shape[1])]
             X_cat = [np.eye(cat_levels[i])[X_cat[:,i].astype(np.int32)].astype(np.float32) for i in range(X_cat.shape[1])]
             X = np.hstack([X, *X_cat])
             self.no_cat = len(cat_levels)
 
         self.X = X.astype(np.float32)
         self.cat_levels = cat_levels
+
+        # Filter training data for specific groups
+        if group_filter is not None:
+            if y is None:
+                raise ValueError("'y' must be given if group_filter specified")
+            if y_cols >1:
+                raise NotImplementedError("Filtering for several y's not implemented")
+            self.X = self.X[np.isin(y, group_filter).flatten(),:]
+            self.y = self.y[np.isin(y, group_filter).flatten(),:]
+
+        self.n = self.X.shape[0]
 
 
     def __len__(self):

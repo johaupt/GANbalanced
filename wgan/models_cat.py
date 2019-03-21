@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,7 +6,7 @@ from torch.autograd import Variable
 from torch import optim
 import warnings
 
-from wgan.training import WGAN
+from .training import WGAN
 
 
 def make_GANbalancer(dataset, generator_input, generator_layers, critic_layers,
@@ -61,8 +62,12 @@ class Generator(nn.Module):
         self.latent_dim = latent_dim
         self.aux_dim = aux_dim
         self.output_dim = output_dim
-        self.cat_output_dim = cat_output_dim
+        self.cat_output_dim= cat_output_dim
         self.training_iterations = 0
+
+        num_output = output_dim if output_dim is not None else 0
+        cat_output = len(cat_output_dim) if cat_output_dim is not None else 0
+        self.sample_output_dim = num_output + cat_output
 
         # Hidden layers
         first_lin_layer = nn.Linear(latent_dim+aux_dim,

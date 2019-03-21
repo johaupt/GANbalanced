@@ -10,7 +10,7 @@ from sklearn.utils import check_X_y, check_random_state, safe_indexing
 from imblearn.over_sampling.base import BaseOverSampler
 from imblearn.over_sampling import RandomOverSampler
 
-from imblearn.utils import check_target_type
+from imblearn.utils import check_target_type, check_sampling_strategy
 from imblearn.utils import Substitution
 from imblearn.utils._docstring import _random_state_docstring
 
@@ -52,9 +52,11 @@ class GANbalancer(BaseOverSampler):
        the variable (e.g. A, B, A, C -> 3 levels) and the dimensionality of the
        embedding for this variable (e.g. 10 -> 10 latent dimensions).
 
-     auxiliary: True, False
+     auxiliary: True, False, list
        If False, then any auxiliary variables provided by the dataset are ignored
        and an unconditional Wasserstein GAN is trained.
+       If a list of integers, then the training data is filtered to include only
+       observations where y is in [list of groups].
 
      batch_size: int
        Batch size for stochastic gradient descent training
@@ -109,6 +111,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         self.verbose = verbose
 
         self.idx_cont = idx_cont
+        self.categorical = categorical
         if categorical is not None:
             self.idx_cat, self.cat_levels, self.emb_sizes = map(list,zip(*categorical))
         else:
@@ -134,6 +137,10 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         return X, y, binarize_y
 
     def _fit(self, X, y=None):
+        self.sampling_strategy_ = check_sampling_strategy(
+            self.sampling_strategy, y,
+            self._sampling_type)
+
         X_cont=None
         X_cat=None
         if self.idx_cont is not None:
@@ -141,10 +148,17 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         if self.idx_cat is not None:
             X_cat = X[:,self.idx_cat]
 
+        # Allow training only on single class
+        group_filter = None
+        if isinstance(self.auxiliary, list):
+            group_filter = self.auxiliary
+
+
         dataset = TabularDataset(X = X_cont,
                                     X_cat=X_cat,
                                     y=y,
-                                    cat_levels=self.cat_levels
+                                    cat_levels=self.cat_levels,
+                                    group_filter=group_filter
                                )
         self.no_aux = dataset.no_aux
         if self.auxiliary is False:
@@ -193,12 +207,31 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
 
     def _sample(self,X,y):
 
+        # try:
+        #     if y.shape[1] != self.no_aux:
+        #         raise ValueError(f"Auxiliary variables must be a 2D array of \
+        #         dimension {self.no_aux}. If y is binary it must still be \
+        #         one-hot encoded.")
+        # except ValueError:
+        #     print(f"Auxiliary variables must be a 2D array of \
+        #     dimension {self.no_aux}. If y is binary it must still be \
+        #     one-hot encoded.")
+        if X.shape[1] != self.generator.sample_output_dim:
+                raise ValueError(f"Output size of generator (\
+{self.generator.sample_output_dim}) \
+does not match dimensionality of data X ({X.shape[1]})")
+
         X_new = np.empty(shape = (0,X.shape[1]))
         y_new = np.array([])
 
         for class_sample, n_samples in self.sampling_strategy_.items():
             if n_samples == 0:
                  continue
+
+            if isinstance(self.auxiliary, list):
+                if class_sample not in self.auxiliary:
+                    raise ValueError((f"Class {class_sample} not found in"
+                        " auxiliary variables, but samples for class requested"))
 
             if self.no_aux == 0:
                 class_sample = None

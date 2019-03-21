@@ -1,0 +1,25 @@
+{
+ "models": {
+     "LR":{
+         "C": [10]
+   },
+      "RF":{
+         "n_estimators": [200],
+         "max_features": ["sqrt"],
+         "min_samples_leaf": [20]
+        }
+ },
+ "samplers": {
+    "cGAN":{
+        "generator_input": [40,100],
+        "generator_layers": [[40,40],[100,100]],
+        "critic_layers": [[40],[100]],
+        "n_iter": [50000],
+        "critic_iterations": [2]
+   },
+    "unbalanced":{},
+    "SMOTE":{
+        "k_neighbors": [5,10,15,25]
+   }
+ }
+}
