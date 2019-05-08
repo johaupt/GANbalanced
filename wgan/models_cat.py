@@ -152,7 +152,8 @@ class Generator(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_size, lin_layer_sizes, cat_input_sizes=0, aux_input_size=0):
+    def __init__(self, input_size, lin_layer_sizes, cat_input_sizes=0, aux_input_size=0,
+                 no_cross_layers=2):
         """
         input_size (integer):
             Number of continous variables in the input data
@@ -163,6 +164,7 @@ class Critic(nn.Module):
         """
         super().__init__()
 
+        self.no_cross_layers = no_cross_layers
         self.input_size = input_size
         self.cat_input_sizes = cat_input_sizes
 
@@ -176,14 +178,27 @@ class Critic(nn.Module):
 
         self.aux_input_size = aux_input_size
 
-        # Hidden layers
+        ## Hidden layers
+        # Feed forward layers
         first_lin_layer = nn.Linear(input_size+self.embedding_size+aux_input_size,
                                     lin_layer_sizes[0])
         self.lin_layers =\
           nn.ModuleList([first_lin_layer] +\
             [nn.Linear(input_, output_) for input_, output_ in zip(lin_layer_sizes, lin_layer_sizes[1:])])
 
-        self.output_layer = nn.Linear(lin_layer_sizes[-1],1)
+        if self.no_cross_layers is not None:
+            # Cross Layers
+            # Add same number of cross layers as FF layers
+            # Cross layer size is equal to input size
+            self.cross_layers =\
+              nn.ModuleList([Cross(input_size+self.embedding_size)
+                             for _ in range(self.no_cross_layers)])
+
+            self.output_layer = nn.Linear(lin_layer_sizes[-1]+\
+                                          input_size+self.embedding_size+aux_input_size,
+                                          1)
+        else:
+            self.output_layer = nn.Linear(lin_layer_sizes[-1], 1)
 
     def forward(self, x, aux_x=None):
         #batch_size = x.size()[0]
@@ -197,10 +212,51 @@ class Critic(nn.Module):
                 i = j
             x = torch.cat([x[:,:self.input_size], *x_emb], dim=1)
 
+        if self.no_cross_layers is not None:
+            # x0 for cross layer without auxiliary
+            x0 = x
+
         if self.aux_input_size != 0:
             x = torch.cat([x,aux_x], dim=1)
 
+        # Linear module
+        x_lin = x
         for lin_layer in self.lin_layers:
-            x = F.relu(lin_layer(x))
+            x_lin = F.relu(lin_layer(x_lin))
+
+        # Cross module
+        if self.no_cross_layers is not None:
+            x_cross = x0
+            for cross_layer in self.cross_layers:
+                # x_0 %*% x' %*% w + b + x
+                x_cross = cross_layer(x0,x_cross)
+
+            # Concat auxiliary variables again before output layer
+            x = torch.cat([x_lin, x_cross,aux_x], dim=1)
+        else:
+            x = x_lin
+
         x = self.output_layer(x)
         return x
+
+class Cross(nn.Module):
+    def __init__(self, input_features):
+        super().__init__()
+        self.input_features = input_features
+
+        self.weights = nn.Parameter(torch.Tensor(input_features))
+        # Kaiming/He initialization with a=0
+        nn.init.normal_(self.weights, mean=0, std=np.sqrt(2/input_features))
+
+        self.bias = nn.Parameter(torch.Tensor(input_features))
+        nn.init.constant_(self.bias, 0.)
+
+    def forward(self, x0, x):
+        x0xl = torch.bmm(x0.unsqueeze(-1), x.unsqueeze(-2))
+        return torch.tensordot(x0xl, self.weights, [[-1],[0]]) + self.bias + x
+
+    # Define some output to give when layer
+    def extra_repr(self):
+        return 'in_features={}, out_features={}'.format(
+            self.input_features, self.input_features
+        )
