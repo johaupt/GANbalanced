@@ -49,8 +49,8 @@ class TabularDataset(Dataset):
 
         if X_cat is not None:
             if cat_levels == 0:
-                cat_levels = [len(np.nunique(X_cat[:,i])) for i in range(X_cat.shape[1])]
-            X_cat = [np.eye(cat_levels[i])[X_cat[:,i].astype(np.int32)].astype(np.float32) for i in range(X_cat.shape[1])]
+                cat_levels = [len(np.nunique(X_cat[:, i])) for i in range(X_cat.shape[1])]
+            X_cat = [np.eye(cat_levels[i])[X_cat[:, i].astype(np.int32)].astype(np.float32) for i in range(X_cat.shape[1])]
             X = np.hstack([X, *X_cat])
             self.no_cat = len(cat_levels)
 

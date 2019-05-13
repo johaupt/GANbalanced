@@ -1,7 +1,4 @@
-import numpy as np
 import torch
-import torch.nn as nn
-from torchvision.utils import make_grid
 from torch.autograd import Variable
 from torch.autograd import grad as torch_grad
 
@@ -44,7 +41,7 @@ class WGAN():
 
         self.D_opt.zero_grad()
         # Calculate critic output of real and fake data
-        d_real = self.D(data,aux_data)
+        d_real = self.D(data, aux_data)
         d_generated = self.D(generated_data, aux_data)
 
         # Get gradient penalty
@@ -62,7 +59,7 @@ class WGAN():
 
         # Record loss
         if self.verbose > 1:
-            if i % self.print_every == 0:
+            if self.critic_iterations % self.print_every == 0:
                 self.losses['GP'].append(gradient_penalty.data)
                 self.losses['D'].append(-d_distance.data)
                 self.losses["distance"].append(d_distance.data)
@@ -85,7 +82,7 @@ class WGAN():
         self.G.training_iterations += 1
 
         if self.verbose > 1:
-            if i % self.print_every == 0:
+            if self.critic_iterations % self.print_every == 0:
                 self.losses['G'].append(g_loss.data)
 
     def _gradient_penalty(self, real_data, generated_data, aux_data):
@@ -110,19 +107,19 @@ class WGAN():
         gradients = torch_grad(outputs=d_interpolated, inputs=interpolated,
                                grad_outputs=torch.ones(d_interpolated.size()).cuda()
                                if self.use_cuda else torch.ones(
-                                      d_interpolated.size()),
-                                      create_graph=True, retain_graph=True,
-                                      only_inputs=True
-                               )[0]
+                                    d_interpolated.size()),
+                                    create_graph=True, retain_graph=True,
+                                    only_inputs=True
+                                    )[0]
 
         # Derivatives of the gradient close to 0 can cause problems because of
         # the square root, so manually calculate norm and add epsilon
         gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
 
-        # Return gradient penalty
-        if self.verbose > 0:
-            if i % self.print_every == 0:
-                self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data)
+        ## Return gradient penalty
+        #if self.verbose > 0:
+        #    if i % self.print_every == 0:
+        #        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data)
         return ((gradients_norm - 1) ** 2).mean()
 
     def _train_epoch(self, data_loader):
@@ -152,6 +149,17 @@ class WGAN():
                         print("Distance: {}".format(self.losses['distance'][-1]))
 
     def train(self, data_loader, epochs, save_training_gif=False):
+        """
+        Train the GAN generator and critic on the data given by the data_loader. GAN
+        needs to be trained before synthetic data can be created.
+
+        Arguments
+        ---------
+        data_loader :
+
+        epochs : int
+        Number of runs through the data (epochs)
+        """
         if save_training_gif:
             # Fix latents to see how image generation improves during training
             fixed_latents = Variable(self.G.sample_latent(64))
@@ -177,6 +185,17 @@ class WGAN():
         #                     training_progress_images)
 
     def sample_generator(self, num_samples, aux_data=None):
+        """
+        Generate num_samples observations from the generator. 
+
+        Arguments
+        ---------
+        num_samples: int
+        Number of observations to generate
+
+        aux_data: object
+        Auxiliary data in the format used to train the generator
+        """
         latent_samples = Variable(self.G.sample_latent(num_samples))
         if self.use_cuda:
             latent_samples = latent_samples.cuda()

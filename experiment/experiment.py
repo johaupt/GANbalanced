@@ -1,4 +1,3 @@
-
 import os
 os.environ["MKL_NUM_THREADS"]="1"
 os.environ["NUMEXPR_NUM_THREADS"]="1"
@@ -7,9 +6,6 @@ os.environ["OPENBLAS_NUM_THREADS"]="1"
 os.environ["VECLIB_MAXIMUM_THREADS"]="1"
 
 import sys
-sys.path.append("/home/RDC/hauptjoh.hub/utils")
-sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
-
 import json
 
 import numpy as np
@@ -32,6 +28,9 @@ from sklearn.linear_model import LogisticRegression
 
 # Samplers
 from imblearn.over_sampling import SMOTE, ADASYN, SMOTENC
+
+sys.path.append("/home/RDC/hauptjoh.hub/utils")
+sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
 from wgan.imblearn import GANbalancer
 import data_loader
 
@@ -49,22 +48,22 @@ opt = parser.parse_args()
 def experiment(data_path, data_name, config_file, output_file, n_jobs):
 
     if data_name == "coil00":
-        X,y = data_loader.load_coil00(data_path)
+        X, y = data_loader.load_coil00(data_path)
     elif data_name == "dmc10":
-        X,y = data_loader.load_dmc10(data_path)
+        X, y = data_loader.load_dmc10(data_path)
     elif data_name == "dmc05":
-        X,y = data_loader.load_dmc05(data_path)
+        X, y = data_loader.load_dmc05(data_path)
     else:
         raise ValueError("Data name not found in available data loaders")
 
-    assert X.shape[0]>0
+    assert X.shape[0] > 0
 
     # Initialize index lists
     idx_cont = None
     idx_cat  = None
 
     if idx_cat is None:
-        idx_cat = list(np.where(X.dtypes=='category')[0])
+        idx_cat = list(np.where(X.dtypes == 'category')[0])
         idx_cat = [int(x) for x in idx_cat]
 
     if idx_cont is None:
@@ -118,7 +117,9 @@ def experiment(data_path, data_name, config_file, output_file, n_jobs):
 
     for sampler_name, sampler_params in config["samplers"].items():
         samplers.append((sampler_name, sampler_fun[sampler_name], sampler_params))
-
+        
+    # Cleaner
+    cleaner = TomekLinksNC(categorical_features=idx_cat, sampling_strategy='auto')
 
     ### Pipeline construction
 
@@ -148,6 +149,7 @@ def experiment(data_path, data_name, config_file, output_file, n_jobs):
             pipeline = Pipeline(steps=[
                 ('preproc_sampler', preproc_sampler),
                 ('sampler', sampler),
+                ('cleaning', cleaner),
                 ('preproc_clf', preproc_clf),
                 ('classifier', model)
               ])
