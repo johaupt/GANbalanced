@@ -31,6 +31,8 @@ def make_GANbalancer(dataset, generator_input, generator_layers, critic_layers,
                           output_dim=dataset.no_cont, cat_output_dim=dataset.cat_levels,
                           aux_dim=no_aux)
 
+    generator.apply(weights_init)
+
     cat_inputs = None
     if dataset.cat_levels is not None:
         cat_inputs = list(zip(dataset.cat_levels, emb_sizes))
@@ -38,6 +40,8 @@ def make_GANbalancer(dataset, generator_input, generator_layers, critic_layers,
     critic = Critic(lin_layer_sizes=critic_layers,
                     input_size=dataset.no_cont, cat_input_sizes=cat_inputs,
                     aux_input_size=no_aux)
+
+    critic.apply(weights_init)
 
     # betas = (.9, .99)
     # G_optimizer = optim.Adam(generator.parameters(), lr=learning_rate[0], betas=betas)
@@ -120,7 +124,8 @@ class Generator(nn.Module):
         if self.aux_dim != 0:
             x = torch.cat([x, aux_x], dim=1)
         for lin_layer in self.lin_layers:
-            x = F.leaky_relu(lin_layer(x), negative_slope=0.1)
+            x = F.relu(lin_layer(x))
+            #x = F.leaky_relu(lin_layer(x), negative_slope=0.1)
             #x = torch.tanh(lin_layer(x))
 
         # Continuous
@@ -294,3 +299,16 @@ class Cross(nn.Module):
         return 'in_features={}, out_features={}'.format(
             self.input_features, self.input_features
         )
+
+
+def weights_init(m):
+    """
+    Define weight initialization for different layer types
+    """
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.kaiming_normal_(m.weight.data, mode='fan_out', nonlinearity='relu')
+        nn.init.constant_(m.bias.data, 0.1)
+    elif classname.find('Cross') != -1:
+        nn.init.kaiming_normal_(m.weight.data, mode='fan_out', nonlinearity='relu')
+        nn.init.constant_(m.bias.data, 0.1)
