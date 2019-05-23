@@ -7,11 +7,11 @@ import torch.nn.functional as F
 from torch import optim
 
 
-from .training import WGAN
+from .training import VanillaGAN, WassersteinGAN, FisherGAN
 
 
-def make_GANbalancer(dataset, generator_input, generator_layers, critic_layers,
-                     emb_sizes, no_aux, learning_rate, critic_iterations=5):
+def make_GANbalancer(dataset, gan_architecture, generator_input, generator_layers, critic_layers,
+                     emb_sizes, no_aux, learning_rate, critic_iterations=5, verbose=0, **kwargs):
     """
     Make a generator and critic to fit the given dataset
 
@@ -37,43 +37,72 @@ def make_GANbalancer(dataset, generator_input, generator_layers, critic_layers,
     if dataset.cat_levels is not None:
         cat_inputs = list(zip(dataset.cat_levels, emb_sizes))
 
-    critic = Critic(lin_layer_sizes=critic_layers,
-                    input_size=dataset.no_cont, cat_input_sizes=cat_inputs,
-                    aux_input_size=no_aux)
+    if gan_architecture in ["vanilla"]:
+        critic = Critic(sigmoid_output=True,
+                        lin_layer_sizes=critic_layers,
+                        input_size=dataset.no_cont, cat_input_sizes=cat_inputs,
+                        aux_input_size=no_aux)
+    else:
+        critic = Critic(lin_layer_sizes=critic_layers,
+                        input_size=dataset.no_cont, cat_input_sizes=cat_inputs,
+                        aux_input_size=no_aux)      
 
     critic.apply(weights_init)
 
     # betas = (.9, .99)
-    # G_optimizer = optim.Adam(generator.parameters(), lr=learning_rate[0], betas=betas)
-    # C_optimizer = optim.Adam(critic.parameters(), lr=learning_rate[1], betas=betas)
+    # g_optimizer = optim.Adam(generator.parameters(), lr=learning_rate[0], betas=betas)
+    # c_optimizer = optim.Adam(critic.parameters(), lr=learning_rate[1], betas=betas)
 
     # trainer = WGAN(generator=generator, critic=critic,
-    #             G_optimizer=G_optimizer, C_optimizer=C_optimizer,
+    #             g_optimizer=g_optimizer, c_optimizer=c_optimizer,
     #             gp_weight=10, critic_iterations=critic_iterations,
     #             verbose=0, print_every=1,
     #             use_cuda=torch.cuda.is_available())
-    GAN = make_GAN(generator=generator, critic=critic,
+    GAN = make_GAN(gan_architecture=gan_architecture,
+                   generator=generator, critic=critic,
                    learning_rate=learning_rate,
-                   gp_weight=10,
-                   critic_iterations=critic_iterations)
+                   critic_iterations=critic_iterations,
+                   verbose=verbose,
+                   **kwargs)
 
-    return GAN.G, GAN.D, GAN
+    return GAN.generator, GAN.critic, GAN
 
-def make_GAN(generator, critic, learning_rate, gp_weight=10, critic_iterations=5):
+def make_GAN(gan_architecture, generator, critic, learning_rate, critic_iterations=5,
+             verbose=0, print_every=100, **kwargs):
     """
     Helper function to link generator and critic into a GAN
     """
-    betas = (.9, .99)
-    G_optimizer = optim.Adam(generator.parameters(), lr=learning_rate[0], betas=betas)
-    C_optimizer = optim.Adam(critic.parameters(), lr=learning_rate[1], betas=betas)
+    betas = (.5, .999) # Following Mroueh & Sercu (2017) Fisher GAN
+    g_optimizer = optim.Adam(generator.parameters(), lr=learning_rate[0], betas=betas)
+    c_optimizer = optim.Adam(critic.parameters(), lr=learning_rate[1], betas=betas)
 
-    GAN = WGAN(generator=generator, critic=critic,
-               G_optimizer=G_optimizer, C_optimizer=C_optimizer,
-               gp_weight=gp_weight, critic_iterations=critic_iterations,
-               verbose=0, print_every=1,
-               use_cuda=torch.cuda.is_available())
+    if gan_architecture == "vanilla":
+        gan = VanillaGAN(generator=generator, critic=critic,
+                         g_optimizer=g_optimizer, c_optimizer=c_optimizer,
+                         critic_iterations=critic_iterations,
+                         verbose=verbose, print_every=print_every,
+                         use_cuda=torch.cuda.is_available(),
+                         **kwargs)
 
-    return GAN
+    elif gan_architecture == "wasserstein":
+        gan = WassersteinGAN(generator=generator, critic=critic,
+                             g_optimizer=g_optimizer, c_optimizer=c_optimizer,
+                             critic_iterations=critic_iterations,
+                             verbose=verbose, print_every=print_every,
+                             use_cuda=torch.cuda.is_available(),
+                             **kwargs)
+
+    elif gan_architecture == "fisher":
+        gan = FisherGAN(generator=generator, critic=critic,
+                        g_optimizer=g_optimizer, c_optimizer=c_optimizer,
+                        critic_iterations=critic_iterations,
+                        verbose=verbose, print_every=print_every,
+                        use_cuda=torch.cuda.is_available(),
+                        **kwargs)
+    else:
+        ValueError("Unknown GAN architecture. Should be one of 'vanilla', 'wasserstein', 'fisher'")
+
+    return gan
 
 class Generator(nn.Module):
     """
@@ -107,7 +136,8 @@ class Generator(nn.Module):
 
             self.lin_layers =\
             nn.ModuleList([first_lin_layer] +\
-                [nn.Linear(input_, output_) for input_, output_ in zip(lin_layer_sizes, lin_layer_sizes[1:])])
+                [nn.Linear(input_, output_) for input_, output_ in
+                 zip(lin_layer_sizes, lin_layer_sizes[1:])])
 
             output_layer_input = lin_layer_sizes[-1]
 
@@ -165,7 +195,7 @@ class Generator(nn.Module):
             x_ordinal = []
             for _, levels in enumerate(self.cat_output_dim):
                 j = i+levels
-                x_ordinal.append( torch.multinomial(x[:, i:j], 1).float() )
+                x_ordinal.append(torch.multinomial(x[:, i:j], 1).float())
                 i = j
             x = torch.cat([x[:, :self.output_dim], *x_ordinal], dim=1)
 
@@ -190,7 +220,7 @@ class Generator(nn.Module):
 
 class Critic(nn.Module):
     def __init__(self, input_size, lin_layer_sizes, cat_input_sizes=0, aux_input_size=0,
-                 no_cross_layers=None):
+                 sigmoid_output=False, no_cross_layers=None):
         """
         input_size (integer):
             Number of continous variables in the input data
@@ -201,6 +231,7 @@ class Critic(nn.Module):
         """
         super().__init__()
 
+        self.training_iterations = 0
         self.no_cross_layers = no_cross_layers
         self.input_size = input_size
         self.cat_input_sizes = cat_input_sizes
@@ -209,7 +240,7 @@ class Critic(nn.Module):
             self.embedding_size = sum([y for x, y in cat_input_sizes])
             # Embedding layers
             self.emb_layers = nn.ModuleList([nn.Linear(x, y, bias=False)
-                                     for x, y in cat_input_sizes])
+                                             for x, y in cat_input_sizes])
         else:
             self.embedding_size = 0
 
@@ -237,7 +268,14 @@ class Critic(nn.Module):
 
             output_layer_input += input_size+self.embedding_size+aux_input_size
 
-        self.output_layer = nn.Linear(output_layer_input, 1)
+        if sigmoid_output is False:
+            self.output_layer = nn.Linear(output_layer_input, 1)
+        else:
+            self.output_layer = nn.Sequential(
+                nn.Linear(output_layer_input, 1),
+                nn.Sigmoid()
+                )
+
 
     def forward(self, x, aux_x=None):
         #batch_size = x.size()[0]
