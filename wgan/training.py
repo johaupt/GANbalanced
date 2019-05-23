@@ -91,7 +91,8 @@ class VanillaGAN():
 
         # Record loss
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0:
+            if self.generator.training_iterations % self.print_every == 0 and \
+               self.critic.training_iterations % self.print_every == 0:
                 self.losses['D'].append(-d_distance.data)
                 self.losses["distance"].append(d_distance.data)
 
@@ -116,7 +117,8 @@ class VanillaGAN():
         self.generator.training_iterations += 1
 
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0:
+            if self.generator.training_iterations % self.print_every == 0 and \
+               self.critic.training_iterations % self.print_every == 0:
                 self.losses['G'].append(g_loss.data)
 
     def _train_epoch(self, data_loader):
@@ -264,7 +266,8 @@ class WassersteinGAN(VanillaGAN):
 
         # Record loss
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0:
+            if self.generator.training_iterations % self.print_every == 0 and \
+               self.critic.training_iterations % self.print_every == 0:
                 self.losses['GP'].append(gradient_penalty.data)
                 self.losses['D'].append(-d_distance.data)
                 self.losses["distance"].append(d_distance.data)
@@ -287,7 +290,8 @@ class WassersteinGAN(VanillaGAN):
         self.generator.training_iterations += 1
 
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0:
+            if self.generator.training_iterations % self.print_every == 0 and \
+               self.critic.training_iterations % self.print_every == 0:
                 self.losses['G'].append(g_loss.data)
 
     def _gradient_penalty(self, real_data, generated_data, aux_data):
@@ -393,7 +397,8 @@ class FisherGAN(VanillaGAN):
 
         # Record loss
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0:
+            if self.generator.training_iterations % self.print_every == 0 and \
+               self.critic.training_iterations % self.print_every == 0:
                 self.losses['lagrange_multiplier'].append(self.lagrange_mult.data)
                 self.losses['D'].append(c_loss.data)
                 self.losses["distance"].append(distance.data)
@@ -416,5 +421,6 @@ class FisherGAN(VanillaGAN):
         self.generator.training_iterations += 1
 
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0:
+            if self.generator.training_iterations % self.print_every == 0 and \
+               self.critic.training_iterations % self.print_every == 0:
                 self.losses['G'].append(g_loss.data)
