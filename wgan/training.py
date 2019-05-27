@@ -52,7 +52,7 @@ class VanillaGAN():
         self.num_steps = 0
         self.verbose = verbose
         self.print_every = print_every
-        self.losses = {'G': [], 'D': []}
+        self.losses = {'generator': [], 'critic': []}
 
         if self.use_cuda:
             self.generator.cuda()
@@ -81,7 +81,8 @@ class VanillaGAN():
         d_generated = self.critic(generated_data, aux_data)
 
         # Create total loss and optimize
-        d_distance = d_real.log().mean() + (ones - d_generated).log().mean()
+        g_loss = (ones - d_generated).log().mean()
+        d_distance = d_real.log().mean() + g_loss
         # We do gradient descent, not ascent as described in the original paper
         c_loss = -d_distance
 
@@ -91,10 +92,10 @@ class VanillaGAN():
 
         # Record loss
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0 and \
-               self.critic.training_iterations % self.print_every == 0:
-                self.losses['D'].append(-d_distance.data)
-                self.losses["distance"].append(d_distance.data)
+            if self.critic.training_iterations % self.print_every == 0:
+                self.losses['critic'].append(-d_distance.data.numpy().item())
+                self.losses["distance"].append(d_distance.data.numpy().item())
+                self.losses['generator'].append(g_loss.data.numpy().item())
 
     def _generator_train_iteration(self, data, aux_data):
         """ """
@@ -109,17 +110,12 @@ class VanillaGAN():
 
         # Calculate loss and optimize
         d_generated = self.critic(generated_data, aux_data)
-        g_loss = (ones - d_generated).mean()
+        g_loss = (ones - d_generated).log().mean()
         g_loss.backward()
         self.g_opt.step()
 
         # Record loss
         self.generator.training_iterations += 1
-
-        if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0 and \
-               self.critic.training_iterations % self.print_every == 0:
-                self.losses['G'].append(g_loss.data)
 
     def _train_epoch(self, data_loader):
         for i, data in enumerate(data_loader):
@@ -140,9 +136,9 @@ class VanillaGAN():
             if self.verbose > 2:
                 if i % self.print_every == 0:
                     print("Iteration {}".format(i + 1))
-                    print("D: {}".format(self.losses['D'][-1]))
+                    print("C: {}".format(self.losses['critic'][-1]))
                     if self.num_steps > critic_iterations:
-                        print("G: {}".format(self.losses['G'][-1]))
+                        print("G: {}".format(self.losses['generator'][-1]))
 
     def train(self, data_loader, epochs, save_training_gif=False):
         """
@@ -225,7 +221,7 @@ class WassersteinGAN(VanillaGAN):
         self.gp_weight = gp_weight
 
         # Monitoring
-        self.losses = {'G': [], 'D': [], 'GP': [], "distance":[], 'gradient_norm': []}
+        self.losses = {'generator': [], 'critic': [], "distance":[], 'gradient_norm': [], 'penalty': []}
 
         if self.use_cuda:
             self.generator.cuda()
@@ -254,7 +250,8 @@ class WassersteinGAN(VanillaGAN):
         gradient_penalty = self.gp_weight*self._gradient_penalty(data, generated_data, aux_data)
 
         # Create total loss and optimize
-        d_distance = d_real.mean() - d_generated.mean()
+        g_loss = d_generated.mean()
+        d_distance = d_real.mean() - g_loss
         # The Wasserstein distance is the supremum (maximum) between the two expectations
         # in order to maximize, we minimize the negative loss and
         # add the penalty
@@ -266,11 +263,11 @@ class WassersteinGAN(VanillaGAN):
 
         # Record loss
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0 and \
-               self.critic.training_iterations % self.print_every == 0:
-                self.losses['GP'].append(gradient_penalty.data)
-                self.losses['D'].append(-d_distance.data)
-                self.losses["distance"].append(d_distance.data)
+            if self.critic.training_iterations % self.print_every == 0:
+                self.losses['penalty'].append(gradient_penalty.data.numpy().item())
+                self.losses['critic'].append(-d_distance.data.numpy().item())
+                self.losses["distance"].append(d_distance.data.numpy().item())
+                self.losses['generator'].append(-g_loss.data.numpy().item())
 
     def _generator_train_iteration(self, data, aux_data):
         """ """
@@ -288,11 +285,7 @@ class WassersteinGAN(VanillaGAN):
 
         # Record loss
         self.generator.training_iterations += 1
-
-        if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0 and \
-               self.critic.training_iterations % self.print_every == 0:
-                self.losses['G'].append(g_loss.data)
+                
 
     def _gradient_penalty(self, real_data, generated_data, aux_data):
         assert real_data.size() == generated_data.size(), ('real and generated mini batches must '
@@ -348,7 +341,7 @@ class FisherGAN(VanillaGAN):
                          use_cuda=use_cuda)
 
         # Monitoring
-        self.losses = {'G': [], 'D': [], "distance":[], 'lagrange_multiplier': []}
+        self.losses = {'generator': [], 'critic': [], "distance":[], 'lagrange_multiplier': []}
 
         self.penalty = penalty
         self.lagrange_mult = torch.FloatTensor([0])
@@ -378,7 +371,8 @@ class FisherGAN(VanillaGAN):
         # Calculate critic output of real and fake data
         d_real = self.critic(data, aux_data)
         d_generated = self.critic(generated_data, aux_data)
-        distance = d_real.mean() - d_generated.mean()
+        g_loss = d_generated.mean()
+        distance = d_real.mean() - g_loss
 
         # Calculate constraint \Omega
         constraint = 1 - (0.5*(d_real**2).mean() + 0.5*(d_generated**2).mean())
@@ -386,7 +380,7 @@ class FisherGAN(VanillaGAN):
         # Create total loss and optimize
         c_loss = distance + self.lagrange_mult * constraint - self.penalty/2 * constraint**2
 
-        # Maximize critic weights w.r.t loss
+        # Maximize critic weights w.r.t loss by minimizing negative loss
         (-c_loss).backward()
         self.c_opt.step()
         self.critic.training_iterations += 1
@@ -397,11 +391,11 @@ class FisherGAN(VanillaGAN):
 
         # Record loss
         if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0 and \
-               self.critic.training_iterations % self.print_every == 0:
-                self.losses['lagrange_multiplier'].append(self.lagrange_mult.data)
-                self.losses['D'].append(c_loss.data)
-                self.losses["distance"].append(distance.data)
+            if self.critic.training_iterations % self.print_every == 0:
+                self.losses['lagrange_multiplier'].append(self.lagrange_mult.data.numpy().item())
+                self.losses['critic'].append(-c_loss.data.numpy().item())
+                self.losses["distance"].append(distance.data.numpy().item())
+                self.losses['generator'].append(-g_loss.data.numpy().item())
 
     def _generator_train_iteration(self, data, aux_data):
         """ """
@@ -419,8 +413,3 @@ class FisherGAN(VanillaGAN):
 
         # Record loss
         self.generator.training_iterations += 1
-
-        if self.verbose > 1:
-            if self.generator.training_iterations % self.print_every == 0 and \
-               self.critic.training_iterations % self.print_every == 0:
-                self.losses['G'].append(g_loss.data)
