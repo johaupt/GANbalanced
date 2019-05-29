@@ -9,6 +9,9 @@ import torch
 from torch.autograd import Variable
 from torch.autograd import grad as torch_grad
 
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
+
 class VanillaGAN():
     """
     Vanilla GAN and base class for different GAN architectures.
@@ -52,7 +55,7 @@ class VanillaGAN():
         self.num_steps = 0
         self.verbose = verbose
         self.print_every = print_every
-        self.losses = {'generator': [], 'critic': []}
+        self.losses = {'generator_iter': [], 'generator': [], 'critic': [], 'discrimination': []}
 
         if self.use_cuda:
             self.generator.cuda()
@@ -77,8 +80,8 @@ class VanillaGAN():
 
         self.c_opt.zero_grad()
         # Calculate critic output of real and fake data
-        d_real = self.critic(data, aux_data)
-        d_generated = self.critic(generated_data, aux_data)
+        d_real = self.critic(data, aux_data).clamp(-0.0001, 0.0001)
+        d_generated = self.critic(generated_data, aux_data).clamp(-0.0001, 0.0001)
 
         # Create total loss and optimize
         g_loss = (ones - d_generated).log().mean()
@@ -94,8 +97,9 @@ class VanillaGAN():
         if self.verbose > 1:
             if self.critic.training_iterations % self.print_every == 0:
                 self.losses['critic'].append(-d_distance.data.numpy().item())
-                self.losses["distance"].append(d_distance.data.numpy().item())
+                self.losses["discrimination"].append(d_generated.mean().data.numpy().item())
                 self.losses['generator'].append(g_loss.data.numpy().item())
+                self.losses['generator_iter'].append(self.generator.training_iterations)
 
     def _generator_train_iteration(self, data, aux_data):
         """ """
@@ -109,7 +113,7 @@ class VanillaGAN():
             ones.cuda()
 
         # Calculate loss and optimize
-        d_generated = self.critic(generated_data, aux_data)
+        d_generated = self.critic(generated_data, aux_data).clamp(-0.0001, 0.0001)
         g_loss = (ones - d_generated).log().mean()
         g_loss.backward()
         self.g_opt.step()
@@ -203,7 +207,32 @@ class VanillaGAN():
     #     # Remove color channel
     #     return generated_data.data.cpu().numpy()[:, 0, :, :]
 
-    #TODO: At function to plot loss during training
+    def plot_training(self):
+        """
+        Plot generator and critic loss and architecture-specific statistics
+        over training iterations
+        """
+        fig = Figure()
+        FigureCanvas(fig)
+        ax1 = fig.add_subplot(311)
+        ax2 = fig.add_subplot(312)
+        ax3 = fig.add_subplot(313)
+
+        losses = self.losses.copy()
+        generator_iter = losses.pop("generator_iter")
+        for key, data_list in losses.items():
+            if key in ["generator", "critic"]:
+                ax1.plot(generator_iter, data_list, label=key)
+            elif key in ["distance"]:
+                ax2.plot(generator_iter, data_list, label=key)
+            else:
+                ax3.plot(generator_iter, data_list, label=key)
+        ax1.legend(loc="upper right")
+        ax2.legend(loc="upper right")
+        ax3.legend(loc="upper right")
+
+        return fig
+
 
 class WassersteinGAN(VanillaGAN):
     """
@@ -221,7 +250,7 @@ class WassersteinGAN(VanillaGAN):
         self.gp_weight = gp_weight
 
         # Monitoring
-        self.losses = {'generator': [], 'critic': [], "distance":[], 'gradient_norm': [], 'penalty': []}
+        self.losses = {'generator_iter': [],'generator': [], 'critic': [], 'penalty': []}
 
         if self.use_cuda:
             self.generator.cuda()
@@ -266,8 +295,8 @@ class WassersteinGAN(VanillaGAN):
             if self.critic.training_iterations % self.print_every == 0:
                 self.losses['penalty'].append(gradient_penalty.data.numpy().item())
                 self.losses['critic'].append(-d_distance.data.numpy().item())
-                self.losses["distance"].append(d_distance.data.numpy().item())
                 self.losses['generator'].append(-g_loss.data.numpy().item())
+                self.losses['generator_iter'].append(self.generator.training_iterations)
 
     def _generator_train_iteration(self, data, aux_data):
         """ """
@@ -285,7 +314,7 @@ class WassersteinGAN(VanillaGAN):
 
         # Record loss
         self.generator.training_iterations += 1
-                
+
 
     def _gradient_penalty(self, real_data, generated_data, aux_data):
         assert real_data.size() == generated_data.size(), ('real and generated mini batches must '
@@ -341,7 +370,8 @@ class FisherGAN(VanillaGAN):
                          use_cuda=use_cuda)
 
         # Monitoring
-        self.losses = {'generator': [], 'critic': [], "distance":[], 'lagrange_multiplier': []}
+        self.losses = {'generator_iter': [],'generator': [], 'critic': [], "distance":[],
+                       'lagrange_multiplier': [], "constraint": []}
 
         self.penalty = penalty
         self.lagrange_mult = torch.FloatTensor([0])
@@ -358,11 +388,13 @@ class FisherGAN(VanillaGAN):
         batch_size = data.size()[0]
         data = Variable(data)
         aux_data = Variable(aux_data)
+        one = torch.ones(1)
 
         # Calculate probabilities on real and generated data
         if self.use_cuda:
             data = data.cuda()
             aux_data = aux_data.cuda()
+            one = one.cuda()
 
         # Generate fake data
         generated_data = self.sample_generator(batch_size, aux_data).detach()
@@ -371,16 +403,18 @@ class FisherGAN(VanillaGAN):
         # Calculate critic output of real and fake data
         d_real = self.critic(data, aux_data)
         d_generated = self.critic(generated_data, aux_data)
+        # Calculate loss as different in means of critic output
         g_loss = d_generated.mean()
         distance = d_real.mean() - g_loss
 
         # Calculate constraint \Omega
-        constraint = 1 - (0.5*(d_real**2).mean() + 0.5*(d_generated**2).mean())
+        constraint = (0.5*(d_real**2).mean() + 0.5*(d_generated**2).mean())
 
         # Create total loss and optimize
-        c_loss = distance + self.lagrange_mult * constraint - self.penalty/2 * constraint**2
+        c_loss = (distance + self.lagrange_mult * (one-constraint)
+                  - self.penalty/2 * (one-constraint)**2)
 
-        # Maximize critic weights w.r.t loss by minimizing negative loss
+        # Maximize critic weights w.r.t augmented lagrangian L by minimizing negative L
         (-c_loss).backward()
         self.c_opt.step()
         self.critic.training_iterations += 1
@@ -393,9 +427,11 @@ class FisherGAN(VanillaGAN):
         if self.verbose > 1:
             if self.critic.training_iterations % self.print_every == 0:
                 self.losses['lagrange_multiplier'].append(self.lagrange_mult.data.numpy().item())
-                self.losses['critic'].append(-c_loss.data.numpy().item())
+                self.losses['constraint'].append(constraint.data.numpy().item())
                 self.losses["distance"].append(distance.data.numpy().item())
+                self.losses['critic'].append(-c_loss.data.numpy().item())
                 self.losses['generator'].append(-g_loss.data.numpy().item())
+                self.losses['generator_iter'].append(self.generator.training_iterations)
 
     def _generator_train_iteration(self, data, aux_data):
         """ """

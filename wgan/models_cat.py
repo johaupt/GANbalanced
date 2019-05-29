@@ -377,11 +377,11 @@ def make_GANbalancer(dataset, gan_architecture, generator_input, generator_layer
     #             gp_weight=10, critic_iterations=critic_iterations,
     #             verbose=0, print_every=1,
     #             use_cuda=torch.cuda.is_available())
-    GAN = make_GAN(gan_architecture=gan_architecture,
+    gan = make_GAN(gan_architecture=gan_architecture,
                    generator=generator, critic=critic,
                    learning_rate=learning_rate,
                    critic_iterations=critic_iterations,
                    verbose=verbose,
                    **kwargs)
 
-    return GAN.generator, GAN.critic, GAN
+    return gan.generator, gan.critic, gan
