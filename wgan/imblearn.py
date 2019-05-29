@@ -6,7 +6,7 @@ adversarial network."""
 
 import numpy as np
 
-from sklearn.utils import check_X_y, check_random_state
+from sklearn.utils import check_X_y#, check_random_state
 from torch.utils.data import DataLoader
 
 from tqdm import tqdm
@@ -17,7 +17,7 @@ from imblearn.utils import Substitution
 from imblearn.utils._docstring import _random_state_docstring
 
 from wgan.data_loader import TabularDataset
-from wgan.models_cat import make_GANbalancer, make_GAN
+from wgan.models_cat import make_GANbalancer
 
 
 @Substitution(
@@ -97,7 +97,8 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
     """
 
     def __init__(self, idx_cont, categorical, auxiliary=True,
-                 generator_input=10, generator_layers=[10], critic_layers=[10],
+                 gan_architecture="wasserstein",
+                 generator_input=10, generator_layers=(10), critic_layers=(10),
                  batch_size=64, n_iter=1000, learning_rate=(5e-5, 5e-5),
                  critic_iterations=5,
                  sampling_strategy='auto',
@@ -115,6 +116,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
             self.idx_cat, self.cat_levels, self.emb_sizes = None, None, None
         self.auxiliary = auxiliary
 
+        self.gan_architecture = gan_architecture
         self.generator_input = generator_input
         self.generator_layers = generator_layers
         self.critic_layers = critic_layers
@@ -125,7 +127,13 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         self.batch_size = batch_size
         self.n_iter = n_iter
 
+        # Actual GAN is created when fit() is called
+        self.trainer = None
+        self.critic = None
         self.generator = None
+        self.no_aux = None
+
+        self.sampling_strategy_ = None
 
     @staticmethod
     def _check_X_y(X, y):
@@ -159,10 +167,11 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
             self.no_aux = 0
 
         generator, critic, trainer = make_GANbalancer(
-            dataset=dataset, generator_input=self.generator_input,
+            dataset=dataset,
+            gan_architecture=self.gan_architecture, generator_input=self.generator_input,
             generator_layers=self.generator_layers, critic_layers=self.critic_layers,
             emb_sizes=self.emb_sizes, no_aux=self.no_aux, learning_rate=self.learning_rate,
-            critic_iterations=self.critic_iterations)
+            critic_iterations=self.critic_iterations, verbose=self.verbose)
 
         train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
@@ -181,6 +190,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         if self.verbose > 0:
             pbar.close()
 
+        self.trainer = trainer
         self.generator = generator
         self.critic = critic
         return self
@@ -217,12 +227,6 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
 
         # Use previously fitted generator and critic
 
-        trainer = make_GAN(generator=self.generator, critic=self.critic,
-                           learning_rate=self.learning_rate,
-                           critic_iterations=self.critic_iterations)
-        generator = trainer.G
-        #critic = trainer.D
-
         train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
         # Train for generator update iterations instead of epochs, because this is
@@ -230,19 +234,19 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         if self.verbose > 0:
             pbar = tqdm(total=n_iter)
 
-        target_iter = generator.training_iterations + n_iter
-        while generator.training_iterations < target_iter:
-            temp_iterations = generator.training_iterations
-            trainer._train_epoch(train_loader)
+        target_iter = self.trainer.generator.training_iterations + n_iter
+        while self.trainer.generator.training_iterations < target_iter:
+            temp_iterations = self.trainer.generator.training_iterations
+            self.trainer._train_epoch(train_loader)
 
             if self.verbose > 0:
-                pbar.update(generator.training_iterations - temp_iterations)
+                pbar.update(self.trainer.generator.training_iterations - temp_iterations)
 
         if self.verbose > 0:
             pbar.close()
 
-        self.generator = trainer.G
-        self.critic = trainer.D
+        #self.generator = trainer.generator
+        #self.critic = trainer.critic
         return self
 
 
