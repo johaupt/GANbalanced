@@ -20,7 +20,6 @@ from tqdm import tqdm
 
 # Evaluation functions
 from sklearn.metrics import roc_auc_score, make_scorer
-from lift.perc_lift_score import perc_lift_score
 
 # Models
 from sklearn.ensemble import RandomForestClassifier
@@ -31,8 +30,11 @@ from imblearn.over_sampling import SMOTE, ADASYN, SMOTENC
 
 sys.path.append("/home/RDC/hauptjoh.hub/utils")
 sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
-from wgan.imblearn import GANbalancer
+from lift.perc_lift_score import perc_lift_score
+from imblearnNC.under_sampling import TomekLinksNC
 import data_loader
+
+from wgan.imblearn import GANbalancer
 
 import argparse
 parser = argparse.ArgumentParser()

@@ -1,0 +1,20 @@
+{
+ "models": {
+     "LR":{
+         "C": [10]
+   }
+ },
+ "samplers": {
+    "cGAN":{
+        "generator_input": [75],
+        "generator_layers": [[75,75,75]],
+        "critic_layers": [[75,75]],
+        "n_iter": [100000],
+        "critic_iterations": [1,2,3]
+   },
+    "unbalanced":{},
+    "SMOTE":{
+        "k_neighbors": [5,10,15,25]
+   }
+ }
+}
