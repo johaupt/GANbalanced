@@ -28,8 +28,10 @@ from sklearn.linear_model import LogisticRegression
 # Samplers
 from imblearn.over_sampling import SMOTE, ADASYN, SMOTENC
 
-sys.path.append("/home/RDC/hauptjoh.hub/utils")
-sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
+#sys.path.append("/home/RDC/hauptjoh.hub/utils")
+#sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
+sys.path.append("/Volumes/hauptjoh.hub/GANbalanced")
+sys.path.append("/Volumes/hauptjoh.hub/utils")
 from lift.perc_lift_score import perc_lift_score
 from imblearnNC.under_sampling import TomekLinksNC
 import data_loader
@@ -151,7 +153,7 @@ def experiment(data_path, data_name, config_file, output_file, n_jobs):
             pipeline = Pipeline(steps=[
                 ('preproc_sampler', preproc_sampler),
                 ('sampler', sampler),
-                ('cleaning', cleaner),
+                #('cleaning', cleaner),
                 ('preproc_clf', preproc_clf),
                 ('classifier', model)
               ])
