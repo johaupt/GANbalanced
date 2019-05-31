@@ -285,7 +285,9 @@ def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
         nn.init.kaiming_normal_(m.weight.data, mode='fan_out', nonlinearity='relu')
-        nn.init.constant_(m.bias.data, 0.1)
+        if m.bias: 
+            nn.init.constant_(m.bias.data, 0.1)
+    
     elif classname.find('Cross') != -1:
         nn.init.kaiming_normal_(m.weight.data, mode='fan_out', nonlinearity='relu')
         nn.init.constant_(m.bias.data, 0.1)
