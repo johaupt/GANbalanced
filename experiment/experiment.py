@@ -11,6 +11,7 @@ import json
 import numpy as np
 import pandas as pd
 
+# Sklearn preprocessing
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_validate
 from imblearn.pipeline import Pipeline
@@ -28,8 +29,8 @@ from sklearn.linear_model import LogisticRegression
 # Samplers
 from imblearn.over_sampling import SMOTE, ADASYN, SMOTENC
 
-#sys.path.append("/home/RDC/hauptjoh.hub/utils")
-#sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
+sys.path.append("/home/RDC/hauptjoh.hub/utils")
+sys.path.append("/home/RDC/hauptjoh.hub/GANbalanced")
 sys.path.append("/Volumes/hauptjoh.hub/GANbalanced")
 sys.path.append("/Volumes/hauptjoh.hub/utils")
 from lift.perc_lift_score import perc_lift_score
@@ -78,14 +79,14 @@ def experiment(data_path, data_name, config_file, output_file, n_jobs):
     categorical = None
     if idx_cat is not None:
         categorical = [(i,
-                        len(X.iloc[:,i].cat.categories),
-                        int(min(15., np.ceil(0.5*len(X.iloc[:,i].cat.categories))))
+                        len(X.iloc[:, i].cat.categories),
+                        int(min(15., np.ceil(0.5*len(X.iloc[:, i].cat.categories))))
                        )
                         for i in idx_cat]
 
 
     # Make sure categorical variables are encoded from 0
-    if np.any([idx>min(idx_cat) for idx in idx_cont]):
+    if np.any([idx > min(idx_cat) for idx in idx_cont]):
         raise ValueError("Variables need to be ordered [cont, cat]")
 
 
@@ -243,6 +244,6 @@ def experiment(data_path, data_name, config_file, output_file, n_jobs):
 
 
 if __name__=="__main__":
-    experiment(data_path = opt.datapath, data_name=opt.dataname,
+    experiment(data_path=opt.datapath, data_name=opt.dataname,
                config_file=opt.config, output_file=opt.outfile,
                n_jobs=int(opt.n_jobs))

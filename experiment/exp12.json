@@ -1,0 +1,23 @@
+{
+ "models": {
+     "LR":{
+         "C": [10]
+   }
+ },
+ "samplers": {
+    "cGAN":{
+      "sampling_strategy": [0.25,0.5,0.75,1],
+        "generator_input": [100],
+        "generator_layers": [[100]],
+        "critic_layers": [[100]],
+        "n_iter": [150000],
+        "critic_iterations": [3],
+        "gan_architecture":["wasserstein"]
+   },
+    "unbalanced":{},
+    "SMOTE":{
+      "sampling_strategy": [0.25,0.5,0.75,1],
+        "k_neighbors": [5,10,15,25]
+   }
+ }
+}
