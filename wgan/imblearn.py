@@ -98,7 +98,8 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
 
     def __init__(self, idx_cont, categorical, auxiliary=True,
                  gan_architecture="wasserstein",
-                 generator_input=10, generator_layers=(10), critic_layers=(10),
+                 generator_input=10, generator_layers=(10),
+                 critic_layers=(10), layer_norm=False,
                  batch_size=64, n_iter=1000, learning_rate=(5e-5, 5e-5),
                  critic_iterations=5,
                  sampling_strategy='auto',
@@ -120,6 +121,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         self.generator_input = generator_input
         self.generator_layers = generator_layers
         self.critic_layers = critic_layers
+        self.layer_norm = layer_norm
 
         self.learning_rate = learning_rate
         self.critic_iterations = critic_iterations
@@ -170,6 +172,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
             dataset=dataset,
             gan_architecture=self.gan_architecture, generator_input=self.generator_input,
             generator_layers=self.generator_layers, critic_layers=self.critic_layers,
+            layer_norm = self.layer_norm,
             emb_sizes=self.emb_sizes, no_aux=self.no_aux, learning_rate=self.learning_rate,
             critic_iterations=self.critic_iterations, verbose=self.verbose)
 

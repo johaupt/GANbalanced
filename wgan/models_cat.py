@@ -156,7 +156,7 @@ class Critic(nn.Module):
     Handles generator softmax output by separate linear 'embedding' layer for soft embedding.
     """
     def __init__(self, input_size, lin_layer_sizes, cat_input_sizes=0, aux_input_size=0,
-                 sigmoid_output=False, no_cross_layers=None):
+                 sigmoid_output=False, layer_norm=False, no_cross_layers=None):
         """
         input_size (integer):
             Number of continous variables in the input data
@@ -189,10 +189,20 @@ class Critic(nn.Module):
         if lin_layer_sizes is not None:
             first_lin_layer = nn.Linear(input_size + self.embedding_size + aux_input_size,
                                         lin_layer_sizes[0])
-            self.lin_layers =\
-            nn.ModuleList([first_lin_layer] +\
-                [nn.Linear(input_, output_) for input_, output_ in
-                 zip(lin_layer_sizes, lin_layer_sizes[1:])])
+            
+            if layer_norm is True:
+                lin_layers = [first_lin_layer] +\
+                    [nn.Linear(input_, output_) for input_, output_ in
+                     zip(lin_layer_sizes, lin_layer_sizes[1:])]
+                layer_norm_layers = [nn.LayerNorm(nodes) for nodes in lin_layer_sizes]
+                self.lin_layers = nn.ModuleList([item for pair in zip(lin_layers, layer_norm_layers) 
+                                                 for item in pair])
+            else:
+                self.lin_layers =\
+                nn.ModuleList([first_lin_layer] +\
+                    [nn.Linear(input_, output_) for input_, output_ in
+                    zip(lin_layer_sizes, lin_layer_sizes[1:])])
+
             output_layer_input = lin_layer_sizes[-1]
 
         if self.no_cross_layers is not None:
@@ -332,7 +342,7 @@ def make_GAN(gan_architecture, generator, critic, learning_rate, critic_iteratio
 
 
 def make_GANbalancer(dataset, gan_architecture, generator_input, generator_layers, critic_layers,
-                     emb_sizes, no_aux, learning_rate, critic_iterations=5, verbose=0, **kwargs):
+                     emb_sizes, no_aux, learning_rate, layer_norm=False, critic_iterations=5, verbose=0, **kwargs):
     """
     Make a generator and critic to fit the given dataset
 
@@ -360,11 +370,11 @@ def make_GANbalancer(dataset, gan_architecture, generator_input, generator_layer
 
     if gan_architecture in ["vanilla"]:
         critic = Critic(sigmoid_output=True,
-                        lin_layer_sizes=critic_layers,
+                        lin_layer_sizes=critic_layers, layer_norm=layer_norm,
                         input_size=dataset.no_cont, cat_input_sizes=cat_inputs,
                         aux_input_size=no_aux)
     else:
-        critic = Critic(lin_layer_sizes=critic_layers,
+        critic = Critic(lin_layer_sizes=critic_layers, layer_norm=layer_norm,
                         input_size=dataset.no_cont, cat_input_sizes=cat_inputs,
                         aux_input_size=no_aux)
 
