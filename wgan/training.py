@@ -12,6 +12,10 @@ from torch.autograd import grad as torch_grad
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+import matplotlib.pyplot as plt
+import numpy as np
+import imageio
+
 class VanillaGAN():
     """
     Vanilla GAN and base class for different GAN architectures.
@@ -24,7 +28,7 @@ class VanillaGAN():
     """
     def __init__(self, generator, critic, g_optimizer, c_optimizer,
                  critic_iterations=5, verbose=0, print_every=100,
-                 use_cuda=False):
+                 use_cuda=False, training_gif=False):
         """
         Args:
             generator : pytorch nn module
@@ -60,6 +64,15 @@ class VanillaGAN():
         if self.use_cuda:
             self.generator.cuda()
             self.critic.cuda()
+
+        # Training gif
+        self.training_gif = training_gif
+        if training_gif:
+            # Fix latents to see how image generation improves during training
+            self.fixed_latents = Variable(self.generator.sample_latent(1000))
+            if self.use_cuda:
+                self.fixed_latents = self.fixed_latents.cuda()
+            self.training_progress_images = []
 
     def _critic_train_iteration(self, data, aux_data):
         """ """
@@ -144,7 +157,7 @@ class VanillaGAN():
                     if self.num_steps > critic_iterations:
                         print("G: {}".format(self.losses['generator'][-1]))
 
-    def train(self, data_loader, epochs, save_training_gif=False):
+    def train(self, data_loader, epochs):
         """
         Train the GAN generator and critic on the data given by the data_loader. GAN
         needs to be trained before synthetic data can be created.
@@ -156,30 +169,33 @@ class VanillaGAN():
         epochs : int
         Number of runs through the data (epochs)
         """
-        if save_training_gif:
-            Warning("save_training_gif not implemented. Ignored.")
-        #     # Fix latents to see how image generation improves during training
-        #     fixed_latents = Variable(self.generator.sample_latent(64))
-        #     if self.use_cuda:
-        #         fixed_latents = fixed_latents.cuda()
-        #     training_progress_images = []
 
         for epoch in range(epochs):
-            print("\nEpoch {}".format(epoch + 1))
+            #print("\nEpoch {}".format(epoch + 1))
             self._train_epoch(data_loader)
 
-        #     if save_training_gif:
-        #         # Generate batch of images and convert to grid
-        #         img_grid = make_grid(self.generator(fixed_latents).cpu().data)
-        #         # Convert to numpy and transpose axes to fit imageio convention
-        #         # i.e. (width, height, channels)
-        #         img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
-        #         # Add image grid to training progress
-        #         training_progress_images.append(img_grid)
-        #
-        # if save_training_gif:
-        #     imageio.mimsave('./training_{}_epochs.gif'.format(epochs),
-        #                     training_progress_images)
+            if self.training_gif > 0:
+                # Create plot
+                sim_data = self.generator(self.fixed_latents).cpu().data
+                no_vars = sim_data.shape[1]
+                combinations = [(x, y) for x in range(no_vars) for y in range(no_vars) if y > x]
+                fig, axes = plt.subplots(nrows=no_vars-1, ncols=no_vars-1, squeeze=False,
+                                         figsize=(10, 10))
+                 
+                for i, j in combinations:
+                    axes[(i, j-1)].scatter(*sim_data[:, (i, j)].t()) #, rasterized=True
+                    axes[(i, j-1)].grid()
+
+                fig.suptitle(f"Generator iteration {self.generator.training_iterations}")
+                # Add image grid to training progress
+                ## Keep limits constant
+                #ax.set_ylim(0, y_max)
+                ## Used to return the plot as an image rray
+                fig.canvas.draw()       # draw the canvas, cache the renderer
+                image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
+                image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+                self.training_progress_images.append(image)
+                plt.close()
 
     def sample_generator(self, num_samples, aux_data=None):
         """
@@ -206,6 +222,15 @@ class VanillaGAN():
     #     generated_data = self.sample_generator(num_samples)
     #     # Remove color channel
     #     return generated_data.data.cpu().numpy()[:, 0, :, :]
+
+    def save_training_gif(self, path, step=1, loop=True):
+        if self.training_gif > 0:
+            training_progress_images = self.training_progress_images[::step]
+            imageio.mimsave(path, training_progress_images,
+                            subrectangles=True, loop=loop)
+        else:
+            ValueError("Must set training_gif=True during training to plot a training gif")
+
 
     def plot_training(self):
         """
@@ -240,17 +265,17 @@ class WassersteinGAN(VanillaGAN):
     """
     def __init__(self, generator, critic, g_optimizer, c_optimizer,
                  gp_weight=10, critic_iterations=5, verbose=0, print_every=100,
-                 use_cuda=False):
+                 use_cuda=False, **kwargs):
         super().__init__(generator=generator, critic=critic,
                          g_optimizer=g_optimizer, c_optimizer=c_optimizer,
                          critic_iterations=critic_iterations,
-                         verbose=verbose, print_every=print_every,
-                         use_cuda=use_cuda)
+                         verbose=verbose, print_every=print_every, use_cuda=use_cuda,
+                         **kwargs)
 
         self.gp_weight = gp_weight
 
         # Monitoring
-        self.losses = {'generator_iter': [],'generator': [], 'critic': [], 'penalty': []}
+        self.losses = {'generator_iter': [], 'generator': [], 'critic': [], 'penalty': []}
 
         if self.use_cuda:
             self.generator.cuda()
@@ -362,12 +387,12 @@ class FisherGAN(VanillaGAN):
     """
     def __init__(self, generator, critic, g_optimizer, c_optimizer,
                  critic_iterations=5, penalty=1e-6, verbose=0, print_every=100,
-                 use_cuda=False):
+                 use_cuda=False, **kwargs):
         super().__init__(generator=generator, critic=critic,
                          g_optimizer=g_optimizer, c_optimizer=c_optimizer,
                          critic_iterations=critic_iterations,
                          verbose=verbose, print_every=print_every,
-                         use_cuda=use_cuda)
+                         use_cuda=use_cuda, **kwargs)
 
         # Monitoring
         self.losses = {'generator_iter': [],'generator': [], 'critic': [], "distance":[],

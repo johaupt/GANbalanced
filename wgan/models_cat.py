@@ -189,7 +189,7 @@ class Critic(nn.Module):
         if lin_layer_sizes is not None:
             first_lin_layer = nn.Linear(input_size + self.embedding_size + aux_input_size,
                                         lin_layer_sizes[0])
-            
+
             if layer_norm is True:
                 lin_layers = [first_lin_layer] +\
                     [nn.Linear(input_, output_) for input_, output_ in
@@ -201,7 +201,7 @@ class Critic(nn.Module):
                 self.lin_layers =\
                 nn.ModuleList([first_lin_layer] +\
                     [nn.Linear(input_, output_) for input_, output_ in
-                    zip(lin_layer_sizes, lin_layer_sizes[1:])])
+                     zip(lin_layer_sizes, lin_layer_sizes[1:])])
 
             output_layer_input = lin_layer_sizes[-1]
 
@@ -342,7 +342,8 @@ def make_GAN(gan_architecture, generator, critic, learning_rate, critic_iteratio
 
 
 def make_GANbalancer(dataset, gan_architecture, generator_input, generator_layers, critic_layers,
-                     emb_sizes, no_aux, learning_rate, layer_norm=False, critic_iterations=5, verbose=0, **kwargs):
+                     emb_sizes, no_aux, learning_rate, layer_norm=False, critic_iterations=5,
+                     verbose=0, **kwargs):
     """
     Make a generator and critic to fit the given dataset
 

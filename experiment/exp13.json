@@ -7,12 +7,11 @@
  "samplers": {
     "cGAN":{
         "generator_input": [100],
-        "generator_layers": [[100]],
-        "critic_layers": [[100]],
+        "generator_layers": [[100,200]],
+        "critic_layers": [[100,200]],
         "n_iter": [150000],
-        "critic_iterations": [3],
-        "gan_architecture":["fisher"],
-        "layer_norm": [true]
+        "critic_iterations": [1,2,3],
+        "gan_architecture":["fisher"]
    },
     "unbalanced":{},
     "SMOTE":{
