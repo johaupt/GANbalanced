@@ -103,11 +103,12 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
                  batch_size=64, n_iter=1000, learning_rate=(5e-5, 5e-5),
                  critic_iterations=5,
                  sampling_strategy='auto',
-                 random_state=None, verbose=0):
+                 random_state=None, verbose=0, training_gif=False):
         super().__init__(
             sampling_strategy=sampling_strategy)
         self.random_state = random_state
         self.verbose = verbose
+        self.training_gif = training_gif
 
         self.idx_cont = idx_cont
         self.categorical = categorical
@@ -172,9 +173,10 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
             dataset=dataset,
             gan_architecture=self.gan_architecture, generator_input=self.generator_input,
             generator_layers=self.generator_layers, critic_layers=self.critic_layers,
-            layer_norm = self.layer_norm,
+            layer_norm=self.layer_norm,
             emb_sizes=self.emb_sizes, no_aux=self.no_aux, learning_rate=self.learning_rate,
-            critic_iterations=self.critic_iterations, verbose=self.verbose)
+            critic_iterations=self.critic_iterations,
+            verbose=self.verbose, training_gif=self.training_gif)
 
         train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
@@ -185,7 +187,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
 
         while generator.training_iterations < self.n_iter:
             temp_iterations = generator.training_iterations
-            trainer._train_epoch(train_loader)
+            trainer.train(train_loader, epochs=1)
 
             if self.verbose > 0:
                 pbar.update(generator.training_iterations - temp_iterations)
@@ -240,7 +242,7 @@ RandomOverSampler # doctest: +NORMALIZE_WHITESPACE
         target_iter = self.trainer.generator.training_iterations + n_iter
         while self.trainer.generator.training_iterations < target_iter:
             temp_iterations = self.trainer.generator.training_iterations
-            self.trainer._train_epoch(train_loader)
+            self.trainer.train(train_loader, epochs=1)
 
             if self.verbose > 0:
                 pbar.update(self.trainer.generator.training_iterations - temp_iterations)
